@@ -1,0 +1,3 @@
+#!/bin/sh
+sleep 15
+/jffs/scripts/aimesh-vlan-bridge.sh
