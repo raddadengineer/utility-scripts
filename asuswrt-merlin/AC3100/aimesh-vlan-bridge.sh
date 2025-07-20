@@ -1,28 +1,58 @@
 #!/bin/sh
-logger "Starting VLAN bridge setup"
 
-# Remove guest interfaces from br0
+LOGFILE="/jffs/scripts/vlan-bridge.log"
+log() {
+    echo "$(date): $1" | tee -a "$LOGFILE"
+}
+
+log "Starting VLAN bridge setup"
+
+# Remove known interfaces from br0
 for iface in wl0.1 wl0.2 wl1.1; do
-  brctl delif br0 $iface 2>/dev/null
+    if brctl show br0 | grep -q "$iface"; then
+        log "Removing $iface from br0"
+        brctl delif br0 "$iface"
+    else
+        log "$iface not on br0, skipping"
+    fi
 done
 
 # Create VLANs
-for vid in 20 30 60; do
-  ip link add link eth0 name eth0.$vid type vlan id $vid
-  ip link set eth0.$vid up
+for vlanid in 20 30 60; do
+    IFNAME="eth0.${vlanid}"
+    if ! ip link show "$IFNAME" > /dev/null 2>&1; then
+        log "Creating VLAN interface $IFNAME"
+        ip link add link eth0 name "$IFNAME" type vlan id "$vlanid"
+        ip link set "$IFNAME" up
+    else
+        log "$IFNAME already exists"
+    fi
 done
 
 # Create bridges and add interfaces
-brctl addbr br20
-brctl addif br20 eth0.20
-brctl addif br20 wl0.1
+create_bridge() {
+    BR=$1
+    ETH=$2
+    WIFI=$3
 
-brctl addbr br30
-brctl addif br30 eth0.30
-brctl addif br30 wl1.1
+    if ! brctl show | grep -q "^$BR"; then
+        log "Creating bridge $BR"
+        brctl addbr "$BR"
+        ip link set "$BR" up
+    else
+        log "Bridge $BR already exists"
+    fi
 
-brctl addbr br60
-brctl addif br60 eth0.60
-brctl addif br60 wl0.2
+    log "Adding $ETH to $BR"
+    brctl addif "$BR" "$ETH"
 
-logger "VLAN bridge setup complete"
+    log "Adding $WIFI to $BR"
+    brctl addif "$BR" "$WIFI"
+}
+
+create_bridge br20 eth0.20 wl0.1
+create_bridge br30 eth0.30 wl1.1
+create_bridge br60 eth0.60 wl0.2
+
+log "VLAN bridge setup complete"
+
