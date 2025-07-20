@@ -29,9 +29,9 @@ This script configures custom VLAN bridges on an **Asus router running Asuswrt-M
  ```sh
 chmod +x /jffs/scripts/vlan-setup.sh
 
----
 
-## 🚀 Manual Execution
+
+## 🚀 Manual Execution: 
 Run the script manually via SSH:
 
 ```sh
