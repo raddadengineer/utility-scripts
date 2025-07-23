@@ -72,11 +72,15 @@ nvram set br2_ifnames="${guestSSIDs} ${taggedPort}.${vlan_guest}"
 nvram set lan2_ifname="br2"
 nvram set br2_ifname="br2"
 
-# Enable AP isolation for HAL-Guest only
-if ifconfig "${guestSSIDs}" >/dev/null 2>&1; then
-  nvram set ${guestSSIDs}_ap_isolate=1
-  wl -i ${guestSSIDs} ap_isolate 1
-fi
+# ----------------------------------------------------
+# 🕵️ Enable AP isolation on guest SSIDs (virtuals only)
+# ----------------------------------------------------
+#for iface in ${virtualSSIDs}; do
+#  if ifconfig "$iface" >/dev/null 2>&1; then
+#    nvram set ${iface}_ap_isolate=1
+#    wl -i ${iface} ap_isolate 1
+#  fi
+#done
 
 # Declare wireless interfaces for system tracking (improves GUI visibility)
 nvram set wl_ifnames="wl0 wl1 wl0.1 wl0.2 wl1.1"

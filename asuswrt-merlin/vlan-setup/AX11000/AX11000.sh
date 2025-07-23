@@ -114,6 +114,16 @@ nvram set br3_ifnames="${gamingSSIDs} ${wifi_eth_gaming} ${taggedPort}.${vlan_ga
 nvram set lan3_ifname="br3"
 nvram set br3_ifname="br3"
 
+# ----------------------------------------------------
+# 🕵️ Enable AP isolation on guest SSIDs (virtuals only)
+# ----------------------------------------------------
+#for iface in ${virtualSSIDs}; do
+#  if ifconfig "$iface" >/dev/null 2>&1; then
+#    nvram set ${iface}_ap_isolate=1
+#    wl -i ${iface} ap_isolate 1
+#  fi
+#done
+
 # Declare wireless interfaces (only ones that exist)
 wl_declare=""
 for iface in wl0 wl1 wl2 wl0.1; do
