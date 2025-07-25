@@ -1,139 +1,103 @@
-#### Info #########################################################
-#                            GT-AX11000
-#
-# eth0      Physical port WAN (can be VLAN trunk)
-# eth1      Physical port LAN 1
-# eth2      Physical port LAN 2
-# eth3      Physical port LAN 3
-# eth4      Physical port LAN 4
-# eth5      Physical port 2.5G Gaming LAN
-#
-# eth6      WiFi 2.4GHz (wl0)
-# eth7      WiFi 5GHz #1 (wl1)
-# eth8      WiFi 5GHz #2 / Backhaul (wl2)
-#
-# wl0.1     WiFi 2.4GHz guest1
-# wl0.2     WiFi 2.4GHz guest2
-# wl0.3     WiFi 2.4GHz guest3
-# wl0.4     WiFi 2.4GHz guest4
-#
-# wl1.1     WiFi 5GHz #1 guest1
-# wl1.2     WiFi 5GHz #1 guest2
-# wl1.3     WiFi 5GHz #1 guest3
-#
-# wl2.1     WiFi 5GHz #2 guest1
-# wl2.2     WiFi 5GHz #2 guest2
-# wl2.3     WiFi 5GHz #2 guest3
-###################################################################
 #!/bin/sh
 
-# Wait for core radios to initialize
-for iface in wl0 wl1 wl2; do
-  while ! ifconfig "$iface" >/dev/null 2>&1; do
-    logger "VLAN Bridge: Waiting for $iface to initialize..."
-    sleep 2
-  done
+# ------------------------------------------------------------------------------
+# VLAN Setup & NVRAM Update Script for Asus RT-AX11000 (Asuswrt-Merlin)
+# Optimized for AP Mesh mode with VLAN-tagged SSIDs.
+# ------------------------------------------------------------------------------
+# SSID-to-VLAN Mapping:
+#   HAL-9000  -> VLAN 20 -> br20 -> eth7
+#   HAL-8000  -> VLAN 30 -> br30 -> eth6
+#   HAL-9001  -> VLAN 40 -> br40 -> eth8
+#   HAL-Guest -> VLAN 60 -> br60 -> wl0.1 + wl1.1 (if exists)
+# ------------------------------------------------------------------------------
+
+echo "🔧 Starting fresh VLAN and NVRAM setup..."
+
+# Detach interfaces from br0
+for iface in eth6 eth7 eth8 wl0.1 wl1.1; do
+  brctl delif br0 "$iface" 2>/dev/null
 done
 
-# VLAN IDs
-vlan_main=20
-vlan_iot=30
-vlan_guest=60
-vlan_gaming=40
-
-# Interfaces
-taggedPort="eth0"
-otherPorts="eth1 eth2 eth3 eth4 eth5"
-
-# SSID to bridge mappings
-mainSSIDs="wl1"
-gamingSSIDs="wl2"
-iotSSIDs="wl0"
-guestSSIDs="wl0.1"
-
-wifi_eth_main="eth7"
-wifi_eth_gaming="eth8"
-wifi_eth_iot="eth6"
-
-# Cleanup br0 safely
-for iface in ${taggedPort} ${mainSSIDs} ${gamingSSIDs} ${iotSSIDs} ${guestSSIDs} \
-             ${wifi_eth_main} ${wifi_eth_gaming} ${wifi_eth_iot}; do
-  if ifconfig "$iface" >/dev/null 2>&1; then
-    brctl delif br0 "$iface"
+# Cleanup existing VLAN interfaces on eth5
+for vlan in 20 30 40 60; do
+  if ip link show eth5.$vlan >/dev/null 2>&1; then
+    echo "🧹 Deleting existing VLAN interface eth5.$vlan"
+    ip link delete eth5.$vlan
   fi
 done
 
-# Create VLAN subinterfaces
-for vlan in ${vlan_main} ${vlan_iot} ${vlan_guest} ${vlan_gaming}; do
-  ip link add link ${taggedPort} name ${taggedPort}.${vlan} type vlan id ${vlan}
-  ip link set ${taggedPort}.${vlan} up
-done
-
-# Helper: safe add to bridge
-add_to_bridge() {
-  bridge=$1
-  shift
-  for iface in "$@"; do
-    if ifconfig "$iface" >/dev/null 2>&1; then
-      brctl addif "$bridge" "$iface"
-    fi
-  done
-}
-
-# br0 - HAL-9000 (Main)
-add_to_bridge br0 ${taggedPort}.${vlan_main} ${mainSSIDs} ${wifi_eth_main}
-nvram set lan_ifnames="${otherPorts} ${taggedPort}.${vlan_main} ${mainSSIDs} ${wifi_eth_main}"
-nvram set br0_ifnames="${otherPorts} ${taggedPort}.${vlan_main} ${mainSSIDs} ${wifi_eth_main}"
-nvram set lan_ifname="br0"
-nvram set br0_ifname="br0"
-
-# br1 - HAL-8000 (IoT)
-brctl addbr br1
-add_to_bridge br1 ${taggedPort}.${vlan_iot} ${iotSSIDs} ${wifi_eth_iot}
-ip link set br1 up
-nvram set lan1_ifnames="${taggedPort}.${vlan_iot} ${iotSSIDs} ${wifi_eth_iot}"
-nvram set br1_ifnames="${taggedPort}.${vlan_iot} ${iotSSIDs} ${wifi_eth_iot}"
-nvram set lan1_ifname="br1"
-nvram set br1_ifname="br1"
-
-# br2 - HAL-Guest
-brctl addbr br2
-add_to_bridge br2 ${taggedPort}.${vlan_guest} ${guestSSIDs}
-ip link set br2 up
-nvram set lan2_ifnames="${guestSSIDs} ${taggedPort}.${vlan_guest}"
-nvram set br2_ifnames="${guestSSIDs} ${taggedPort}.${vlan_guest}"
-nvram set lan2_ifname="br2"
-nvram set br2_ifname="br2"
-
-# br3 - HAL-9001 (Gaming)
-brctl addbr br3
-add_to_bridge br3 ${taggedPort}.${vlan_gaming} ${gamingSSIDs} ${wifi_eth_gaming}
-ip link set br3 up
-nvram set lan3_ifnames="${gamingSSIDs} ${wifi_eth_gaming} ${taggedPort}.${vlan_gaming}"
-nvram set br3_ifnames="${gamingSSIDs} ${wifi_eth_gaming} ${taggedPort}.${vlan_gaming}"
-nvram set lan3_ifname="br3"
-nvram set br3_ifname="br3"
-
-# ----------------------------------------------------
-# 🕵️ Enable AP isolation on guest SSIDs (virtuals only)
-# ----------------------------------------------------
-#for iface in ${virtualSSIDs}; do
-#  if ifconfig "$iface" >/dev/null 2>&1; then
-#    nvram set ${iface}_ap_isolate=1
-#    wl -i ${iface} ap_isolate 1
-#  fi
-#done
-
-# Declare wireless interfaces (only ones that exist)
-wl_declare=""
-for iface in wl0 wl1 wl2 wl0.1; do
-  if ifconfig "$iface" >/dev/null 2>&1; then
-    wl_declare="$wl_declare $iface"
+# Cleanup old bridges
+for br in br20 br30 br40 br60; do
+  if ip link show "$br" >/dev/null 2>&1; then
+    echo "🧹 Deleting existing bridge $br"
+    ip link set "$br" down
+    brctl delbr "$br"
   fi
 done
-nvram set wl_ifnames="$wl_declare"
+
+# Create new VLAN interfaces on eth5
+for vlan in 20 30 40 60; do
+  echo "🛠 Creating eth5.$vlan for VLAN $vlan..."
+  ip link add link eth5 name eth5.$vlan type vlan id $vlan
+  ip link set eth5.$vlan up
+done
+
+# Create new bridges and enable STP
+for br in br20 br30 br40 br60; do
+  echo "🔗 Creating bridge $br and enabling STP..."
+  brctl addbr "$br"
+  brctl stp "$br" on
+  ip link set "$br" up
+done
+
+# Enable STP on br0 if it exists
+if ip link show br0 >/dev/null 2>&1; then
+  echo "🔗 Enabling STP on br0..."
+  brctl stp br0 on
+fi
+
+# Add VLAN interfaces to bridges
+brctl addif br20 eth5.20
+brctl addif br30 eth5.30
+brctl addif br40 eth5.40
+brctl addif br60 eth5.60
+
+# Map AP SSIDs to bridges
+brctl addif br20 eth7       # HAL-9000
+brctl addif br30 eth6       # HAL-8000
+brctl addif br40 eth8       # HAL-9001
+brctl addif br60 wl0.1      # HAL-Guest (2.4GHz)
+
+# Conditionally add wl1.1 if it exists
+if ip link show wl1.1 >/dev/null 2>&1; then
+  echo "🔗 Adding wl1.1 to br60"
+  brctl addif br60 wl1.1
+else
+  echo "⚠️ Interface wl1.1 not found, skipping"
+fi
+
+echo "✅ All bridges and VLANs are now active and mapped with STP enabled."
+
+# Update NVRAM with bridge mappings
+nvram set vlan20_ifname="br20"
+nvram set vlan30_ifname="br30"
+nvram set vlan40_ifname="br40"
+nvram set vlan60_ifname="br60"
+
+nvram set br20_ifnames="eth5.20 eth7"
+nvram set br30_ifnames="eth5.30 eth6"
+nvram set br40_ifnames="eth5.40 eth8"
+if ip link show wl1.1 >/dev/null 2>&1; then
+  nvram set br60_ifnames="eth5.60 wl0.1 wl1.1"
+else
+  nvram set br60_ifnames="eth5.60 wl0.1"
+fi
+
 nvram commit
+echo "🧠 NVRAM committed with bridge mappings."
 
 # Restart wireless daemon
-killall eapd 2>/dev/null || true
+killall eapd
 eapd
+
+echo "🎉 VLAN setup finalized with STP active on all bridges."
