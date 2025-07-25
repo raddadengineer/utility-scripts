@@ -1,91 +1,86 @@
 #!/bin/sh
-#### Info #########################################################
-#                          RT-AC68U (Merlin)
-#
-# eth0      Physical port WAN (VLAN trunk interface for VLAN1/VLAN2)
-# eth1      Physical port LAN 1
-# eth2      Physical port LAN 2
-# eth3      Physical port LAN 3
-# eth4      Physical port LAN 4
-#
-# eth6      WiFi 2.4GHz radio (mapped to wl0)
-# eth7      WiFi 5GHz radio  (mapped to wl1)
-#
-# vlan1     LAN bridge (includes LAN ports and SSIDs)
-# vlan2     WAN passthrough (bridged or tagged)
-#
-# wl0.1     WiFi 2.4GHz guest1
-# wl0.2     WiFi 2.4GHz guest2
-#
-# wl1.1     WiFi 5GHz guest1
-###################################################################
 
-# VLAN IDs
-vlan_main=20       # HAL-9000
-vlan_iot=30        # HAL-8000
-vlan_guest=60      # HAL-Guest
+# ------------------------------------------------------------------------------
+# VLAN Setup & NVRAM Update Script for Asus RT-AC68U (Asuswrt-Merlin)
+# VLAN-tagged SSIDs with uplink on eth0.
+# ------------------------------------------------------------------------------
+# SSID-to-VLAN Mapping:
+#   HAL-8000  -> VLAN 30 -> br30 -> eth0.30 + wl0.1
+#   HAL-9000  -> VLAN 40 -> br40 -> eth0.40 + wl1.1
+#   HAL-Guest -> VLAN 60 -> br60 -> eth0.60 + wl0.2
+# ------------------------------------------------------------------------------
 
-# Interfaces
-taggedPort="eth0"
-mainSSIDs="wl1.1"
-iotSSIDs="wl0.1"
-guestSSIDs="wl0.2"
-otherPorts="eth1 eth2 eth3 eth4 eth6 eth7"
+echo "🔧 Starting fresh VLAN and NVRAM setup..."
 
-# Cleanup: remove interfaces from default bridge
-brctl delif br0 ${taggedPort}
-brctl delif br0 ${mainSSIDs} ${iotSSIDs} ${guestSSIDs}
+# Detach wireless interfaces from br0
+for iface in wl0.1 wl0.2 wl1.1; do
+  brctl delif br0 "$iface" 2>/dev/null
+done
 
-# Create VLAN tags on eth0 (trunk to upstream router)
-ip link add link ${taggedPort} name ${taggedPort}.${vlan_main} type vlan id ${vlan_main}
-ip link add link ${taggedPort} name ${taggedPort}.${vlan_iot} type vlan id ${vlan_iot}
-ip link add link ${taggedPort} name ${taggedPort}.${vlan_guest} type vlan id ${vlan_guest}
-ip link set ${taggedPort}.${vlan_main} up
-ip link set ${taggedPort}.${vlan_iot} up
-ip link set ${taggedPort}.${vlan_guest} up
+# Cleanup existing VLAN interfaces on eth0
+for vlan in 30 40 60; do
+  if ip link show eth0.$vlan >/dev/null 2>&1; then
+    echo "🧹 Deleting existing VLAN interface eth0.$vlan"
+    ip link delete eth0.$vlan
+  fi
+done
 
-# Main VLAN bridge (HAL-9000)
-brctl addif br0 ${taggedPort}.${vlan_main}
-brctl addif br0 ${mainSSIDs}
-nvram set lan_ifnames="${otherPorts} ${taggedPort}.${vlan_main} ${mainSSIDs}"
-nvram set br0_ifnames="${otherPorts} ${taggedPort}.${vlan_main} ${mainSSIDs}"
-nvram set lan_ifname="br0"
-nvram set br0_ifname="br0"
+# Cleanup old bridges
+for br in br30 br40 br60; do
+  if ip link show "$br" >/dev/null 2>&1; then
+    echo "🧹 Deleting existing bridge $br"
+    ip link set "$br" down
+    brctl delbr "$br"
+  fi
+done
 
-# IoT VLAN bridge (HAL-8000)
-brctl addbr br1
-brctl addif br1 ${taggedPort}.${vlan_iot}
-brctl addif br1 ${iotSSIDs}
-ip link set br1 up
-nvram set lan1_ifnames="${iotSSIDs} ${taggedPort}.${vlan_iot}"
-nvram set br1_ifnames="${iotSSIDs} ${taggedPort}.${vlan_iot}"
-nvram set lan1_ifname="br1"
-nvram set br1_ifname="br1"
+# Create new VLAN interfaces on eth0
+for vlan in 30 40 60; do
+  echo "🛠 Creating eth0.$vlan for VLAN $vlan..."
+  ip link add link eth0 name eth0.$vlan type vlan id $vlan
+  ip link set eth0.$vlan up
+done
 
-# Guest VLAN bridge (HAL-Guest)
-brctl addbr br2
-brctl addif br2 ${taggedPort}.${vlan_guest}
-brctl addif br2 ${guestSSIDs}
-ip link set br2 up
-nvram set lan2_ifnames="${guestSSIDs} ${taggedPort}.${vlan_guest}"
-nvram set br2_ifnames="${guestSSIDs} ${taggedPort}.${vlan_guest}"
-nvram set lan2_ifname="br2"
-nvram set br2_ifname="br2"
+# Create new bridges and enable STP
+for br in br30 br40 br60; do
+  echo "🔗 Creating bridge $br and enabling STP..."
+  brctl addbr "$br"
+  brctl stp "$br" on
+  ip link set "$br" up
+done
 
-# ----------------------------------------------------
-# 🕵️ Enable AP isolation on guest SSIDs (virtuals only)
-# ----------------------------------------------------
-#for iface in ${virtualSSIDs}; do
-#  if ifconfig "$iface" >/dev/null 2>&1; then
-#    nvram set ${iface}_ap_isolate=1
-#    wl -i ${iface} ap_isolate 1
-#  fi
-#done
+# Enable STP on br0 if it exists
+if ip link show br0 >/dev/null 2>&1; then
+  echo "🔗 Enabling STP on br0..."
+  brctl stp br0 on
+fi
 
-# Declare wireless interfaces for system tracking (improves GUI visibility)
-nvram set wl_ifnames="wl0 wl1 wl0.1 wl0.2 wl1.1"
+# Add VLAN interfaces to bridges
+brctl addif br30 eth0.30
+brctl addif br40 eth0.40
+brctl addif br60 eth0.60
+
+# Map AP SSIDs (wireless interfaces) to bridges
+brctl addif br30 wl0.1      # HAL-8000
+brctl addif br40 wl1.1      # HAL-9000
+brctl addif br60 wl0.2      # HAL-Guest
+
+echo "✅ All bridges and VLANs are now active and mapped with STP enabled."
+
+# Update NVRAM with bridge mappings
+nvram set vlan30_ifname="br30"
+nvram set vlan40_ifname="br40"
+nvram set vlan60_ifname="br60"
+
+nvram set br30_ifnames="eth0.30 wl0.1"
+nvram set br40_ifnames="eth0.40 wl1.1"
+nvram set br60_ifnames="eth0.60 wl0.2"
+
 nvram commit
+echo "🧠 NVRAM committed with bridge mappings."
 
 # Restart wireless daemon
-killall eapd 2>/dev/null || true
+killall eapd
 eapd
+
+echo "🎉 VLAN setup finalized with STP active on all bridges."
