@@ -30,7 +30,7 @@ iotSSIDs="wl0 wl0.1"
 virtualSSIDs="wl0.1 wl1.1"
 
 # ----------------------------------------------------
-# ✅ Safe Setup: Maintain br0 as primary management bridge
+#  Safe Setup: Maintain br0 as primary management bridge
 # ----------------------------------------------------
 
 # Create VLAN subinterfaces
@@ -55,7 +55,7 @@ nvram set lan_ifname="br0"
 nvram set br0_ifname="br0"
 
 # ----------------------------------------------------
-# 🕵️ Enable AP isolation on guest SSIDs (virtuals only)
+#  Enable AP isolation on guest SSIDs (virtuals only)
 # ----------------------------------------------------
 #for iface in ${virtualSSIDs}; do
 #  if ifconfig "$iface" >/dev/null 2>&1; then
@@ -65,13 +65,13 @@ nvram set br0_ifname="br0"
 #done
 
 # ----------------------------------------------------
-# 📡 Declare wireless interfaces for system tracking
+#  Declare wireless interfaces for system tracking
 # ----------------------------------------------------
 nvram set wl_ifnames="wl0 wl1 wl0.1 wl1.1"
 nvram commit
 
 # ----------------------------------------------------
-# 🔄 Restart wireless daemon to apply changes
+#  Restart wireless daemon to apply changes
 # ----------------------------------------------------
 killall eapd 2>/dev/null || true
 eapd
