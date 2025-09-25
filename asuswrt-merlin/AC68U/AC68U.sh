@@ -65,7 +65,7 @@ brctl addif br30 wl0.1      # HAL-8000
 brctl addif br40 wl1.1      # HAL-9000
 brctl addif br60 wl0.2      # HAL-Guest
 
-echo "✅ All bridges and VLANs are now active and mapped with STP enabled."
+echo " All bridges and VLANs are now active and mapped with STP enabled."
 
 # Update NVRAM with bridge mappings
 nvram set vlan30_ifname="br30"
@@ -77,10 +77,10 @@ nvram set br40_ifnames="eth0.40 wl1.1"
 nvram set br60_ifnames="eth0.60 wl0.2"
 
 nvram commit
-echo "🧠 NVRAM committed with bridge mappings."
+echo " NVRAM committed with bridge mappings."
 
 # Restart wireless daemon
 killall eapd
 eapd
 
-echo "🎉 VLAN setup finalized with STP active on all bridges."
+echo " VLAN setup finalized with STP active on all bridges."
